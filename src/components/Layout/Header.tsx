@@ -1,7 +1,6 @@
 import React from 'react';
 import { Bell, LogOut } from 'lucide-react';
 import { User } from '../../types';
-import WalletConnect from '../Wallet/WalletConnect';
 
 interface HeaderProps {
   user: User | null;
@@ -16,7 +15,7 @@ export default function Header({ user, unreadNotifications, onNotificationsClick
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">
-            Hey {user?.name.split(' ')[0]}
+            Hey {user?.name?.split(' ')[0] ?? 'there'}
           </h2>
           <p className="text-gray-600 text-sm">
             {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
@@ -24,7 +23,6 @@ export default function Header({ user, unreadNotifications, onNotificationsClick
         </div>
 
         <div className="flex items-center gap-3">
-          <WalletConnect />
 
           <button
             onClick={onNotificationsClick}

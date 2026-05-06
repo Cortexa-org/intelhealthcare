@@ -47,7 +47,7 @@ function useFeedbackStats(user: User | null): { stats: FeedbackStats | null; loa
       setLoading(true);
       setError(null);
       try {
-        const token = localStorage.getItem('intellihealth_token');
+        const token = localStorage.getItem('auth_token');
         const base = import.meta.env.VITE_API_URL || '';
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;

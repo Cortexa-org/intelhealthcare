@@ -1,5 +1,6 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../database/connection.js';
 import { authenticateToken } from '../middleware/auth.js';
@@ -7,6 +8,205 @@ import { ethers } from 'ethers';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-for-prototype-only';
+
+/** Accept YYYY:MM:DD or YYYY-MM-DD; returns YYYY-MM-DD or { error } */
+function normalizeBirthday(input) {
+  if (input === undefined || input === null || String(input).trim() === '') {
+    return { error: 'Birthday is required' };
+  }
+  const s = String(input).trim();
+  let iso;
+  if (/^\d{4}:\d{2}:\d{2}$/.test(s)) {
+    iso = s.replace(/:/g, '-');
+  } else if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    iso = s;
+  } else {
+    return { error: 'Birthday must be a valid date (YYYY-MM-DD)' };
+  }
+  const [y, m, d] = iso.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  if (
+    date.getFullYear() !== y ||
+    date.getMonth() !== m - 1 ||
+    date.getDate() !== d
+  ) {
+    return { error: 'Invalid birthday' };
+  }
+  return { iso };
+}
+
+/** Disallowed example password from product guidance */
+const FORBIDDEN_REGISTRATION_PASSWORD = 'Dada41001))';
+
+function validateRegistrationPassword(password) {
+  if (typeof password !== 'string' || password.length <= 8) {
+    return 'Password must be longer than 8 characters';
+  }
+  if (!/[A-Za-z]/.test(password)) {
+    return 'Password must include at least one letter';
+  }
+  if (!/[0-9]/.test(password)) {
+    return 'Password must include at least one number';
+  }
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    return 'Password must include at least one special character';
+  }
+  if (password === FORBIDDEN_REGISTRATION_PASSWORD) {
+    return 'This password is not allowed';
+  }
+  return null;
+}
+
+function formatAuthResponse(user, subscription, token) {
+  return {
+    token,
+    user: {
+      id: user.id,
+      name: `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email,
+      email: user.email,
+      role: user.role,
+      walletAddress: user.wallet_address || null,
+      walletProvider: user.wallet_provider || null,
+      walletBlockchain: user.wallet_blockchain || null,
+      avatar: user.avatar,
+      subscription: subscription ? {
+        tier: subscription.tier,
+        status: subscription.status,
+        startDate: subscription.start_date,
+        expiryDate: subscription.expiry_date,
+        autoRenew: subscription.auto_renew
+      } : null
+    }
+  };
+}
+
+/**
+ * Email/password login
+ */
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    const db = await getDb();
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const user = await db('users').whereRaw('LOWER(TRIM(email)) = ?', [normalizedEmail]).first();
+    if (!user || (user.email || '').endsWith('@wallet.local') || !user.password_hash) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    await db('users')
+      .where({ id: user.id })
+      .update({ last_login: new Date().toISOString() });
+
+    const token = jwt.sign(
+      { userId: user.id, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    const subscription = await db('subscriptions')
+      .where({ user_id: user.id })
+      .orderBy('created_at', 'desc')
+      .first();
+
+    res.json(formatAuthResponse(user, subscription, token));
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * Email/password registration
+ */
+router.post('/register', async (req, res) => {
+  try {
+    const { email, password, firstName, lastName, birthday, hobby } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    const pwdErr = validateRegistrationPassword(password);
+    if (pwdErr) {
+      return res.status(400).json({ error: pwdErr });
+    }
+
+    const dob = normalizeBirthday(birthday);
+    if (dob.error) {
+      return res.status(400).json({ error: dob.error });
+    }
+
+    const db = await getDb();
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const existing = await db('users').whereRaw('LOWER(TRIM(email)) = ?', [normalizedEmail]).first();
+    if (existing) {
+      return res.status(409).json({ error: 'An account with this email already exists' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const userId = uuidv4();
+    const firstNameVal = (firstName || '').trim() || 'User';
+    const lastNameVal = (lastName || '').trim() || '';
+    const hobbyVal = (hobby !== undefined && hobby !== null ? String(hobby) : '').trim();
+
+    await db('users').insert({
+      id: userId,
+      email: normalizedEmail,
+      password_hash: passwordHash,
+      first_name: firstNameVal,
+      last_name: lastNameVal,
+      role: 'patient',
+      profile: JSON.stringify({ hobby: hobbyVal }),
+      active: true,
+      created_at: new Date().toISOString()
+    });
+
+    await db('patients').insert({
+      id: uuidv4(),
+      user_id: userId,
+      mrn: `MRN-${Date.now()}`,
+      date_of_birth: dob.iso,
+      medical_history: JSON.stringify({}),
+      emergency_contacts: JSON.stringify([]),
+      created_at: new Date().toISOString()
+    });
+
+    await db('subscriptions').insert({
+      id: uuidv4(),
+      user_id: userId,
+      tier: 'free',
+      status: 'active',
+      start_date: new Date().toISOString(),
+      auto_renew: false,
+      created_at: new Date().toISOString()
+    });
+
+    const user = await db('users').where({ id: userId }).first();
+    const subscription = await db('subscriptions')
+      .where({ user_id: userId })
+      .orderBy('created_at', 'desc')
+      .first();
+
+    const token = jwt.sign(
+      { userId: user.id, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.status(201).json(formatAuthResponse(user, subscription, token));
+  } catch (error) {
+    console.error('Register error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 router.post('/wallet/login', async (req, res) => {
   try {
@@ -81,38 +281,19 @@ router.post('/wallet/login', async (req, res) => {
     const token = jwt.sign(
       { 
         userId: user.id, 
-        walletAddress: normalizedAddress,
+        walletAddress: addr,
         role: user.role 
       },
       JWT_SECRET,
       { expiresIn: '7d' } // Longer expiry for wallet users
     );
 
-    // Get subscription info
     const subscription = await db('subscriptions')
       .where({ user_id: user.id })
       .orderBy('created_at', 'desc')
       .first();
 
-    res.json({
-      token,
-      user: {
-        id: user.id,
-        name: `${user.first_name} ${user.last_name}`.trim(),
-        role: user.role,
-        walletAddress: user.wallet_address,
-        walletProvider: user.wallet_provider,
-        walletBlockchain: user.wallet_blockchain,
-        avatar: user.avatar,
-        subscription: subscription ? {
-          tier: subscription.tier,
-          status: subscription.status,
-          startDate: subscription.start_date,
-          expiryDate: subscription.expiry_date,
-          autoRenew: subscription.auto_renew
-        } : null
-      }
-    });
+    res.json(formatAuthResponse(user, subscription, token));
 
   } catch (error) {
     console.error('Wallet login error:', error);
@@ -134,7 +315,7 @@ router.post('/wallet/verify', async (req, res) => {
 
       res.json({
         valid: isValid,
-        recoveredAddress
+        recoveredAddress: recovered
       });
     } catch (error) {
       res.json({ valid: false, error: 'Invalid signature' });
@@ -231,7 +412,8 @@ router.get('/me', authenticateToken, async (req, res) => {
 
     res.json({
       id: user.id,
-      name: `${user.first_name} ${user.last_name}`.trim(),
+      email: user.email,
+      name: `${(user.first_name || '')} ${(user.last_name || '')}`.trim() || user.email,
       role: user.role,
       walletAddress: user.wallet_address,
       walletProvider: user.wallet_provider,

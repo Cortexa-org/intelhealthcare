@@ -1,4 +1,4 @@
-import { initDatabase } from '../src/database/connection.js';
+import { initDatabase } from '../server/database/connection.js';
 
 async function runMigrations() {
   try {

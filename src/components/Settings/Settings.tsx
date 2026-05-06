@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
-import { User, Bell, Shield, Database, Save, Wallet, CreditCard } from 'lucide-react';
+import { User, Bell, Shield, Database, Save, CreditCard } from 'lucide-react';
 import { User as UserType, SubscriptionTier } from '../../types';
-import WalletConnect from '../Wallet/WalletConnect';
 import SubscriptionPlans from '../Subscription/SubscriptionPlans';
-import { useWallet } from '../../hooks/useWallet';
 import { subscribeToPlan } from '../../services/subscriptionService';
 
 interface SettingsProps {
@@ -13,7 +11,6 @@ interface SettingsProps {
 
 export default function Settings({ user, onUserUpdate }: SettingsProps) {
   const [activeTab, setActiveTab] = useState('profile');
-  const { isConnected } = useWallet();
   const [avatarPreview, setAvatarPreview] = useState<string | null>(user?.avatar || null);
   const [settings, setSettings] = useState({
     profile: {
@@ -49,7 +46,6 @@ export default function Settings({ user, onUserUpdate }: SettingsProps) {
     { id: 'notifications', name: 'Notifications', icon: Bell },
     { id: 'privacy', name: 'Privacy', icon: Shield },
     { id: 'ai', name: 'AI Settings', icon: Database },
-    { id: 'wallet', name: 'Wallet', icon: Wallet },
   ];
 
   const handleSettingChange = (category: string, key: string, value: any) => {
@@ -133,7 +129,7 @@ export default function Settings({ user, onUserUpdate }: SettingsProps) {
         <SubscriptionPlans
           currentTier={currentTier}
           onSelect={onSubscribe}
-          walletConnected={isConnected}
+          canSubscribe={!!localStorage.getItem('auth_token')}
         />
       </div>
     );
@@ -435,24 +431,6 @@ export default function Settings({ user, onUserUpdate }: SettingsProps) {
     </div>
   );
 
-  const renderWalletSettings = () => (
-    <div className="space-y-6">
-      <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
-        <div className="flex items-center space-x-2">
-          <Wallet className="h-5 w-5 text-indigo-600" />
-          <h4 className="font-medium text-indigo-800">Web3 Wallet</h4>
-        </div>
-        <p className="text-sm text-indigo-700 mt-1">
-          Connect an EVM-compatible wallet (e.g. MetaMask) for consent signing and blockchain audit (FR-8–FR-10, FR-24–FR-26). No PHI is stored on-chain.
-        </p>
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Connection</label>
-        <WalletConnect />
-      </div>
-    </div>
-  );
-
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div>
@@ -489,7 +467,6 @@ export default function Settings({ user, onUserUpdate }: SettingsProps) {
           {activeTab === 'notifications' && renderNotificationSettings()}
           {activeTab === 'privacy' && renderPrivacySettings()}
           {activeTab === 'ai' && renderAISettings()}
-          {activeTab === 'wallet' && renderWalletSettings()}
         </div>
 
         <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 rounded-b-lg">
