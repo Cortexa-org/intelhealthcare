@@ -25,7 +25,7 @@ function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [pendingAIDecision, setPendingAIDecision] = useState<AIDecision | null>(null);
   
-  const { user, isAuthenticated, loginWithWallet, logout, refreshUser } = useAuth();
+  const { user, isAuthenticated, loginWithEmail, register, logout, refreshUser } = useAuth();
   const { notifications, unreadCount, markAsRead } = useNotifications(user?.id);
 
   const baseNav = [
@@ -53,13 +53,13 @@ function App() {
       case 'dashboard':
         return <Dashboard user={user} onNavigate={setCurrentView} />;
       case 'triage':
-        return <Triage user={user} onAIDecision={handleAIDecision} />;
+        return <Triage user={user} onAIDecision={onAIDecision} />;
       case 'meetings':
-        return <Meetings user={user} onAIDecision={handleAIDecision} />;
+        return <Meetings user={user} onAIDecision={onAIDecision} />;
       case 'chat':
-        return <Chat user={user} onAIDecision={handleAIDecision} />;
+        return <Chat user={user} onAIDecision={onAIDecision} />;
       case 'rpm':
-        return <RPM user={user} onAIDecision={handleAIDecision} />;
+        return <RPM user={user} onAIDecision={onAIDecision} />;
       case 'care-timeline':
         return <CareTimeline user={user} />;
       case 'patients':
@@ -74,7 +74,7 @@ function App() {
   };
 
   if (!isAuthenticated) {
-    return <AuthModal onLoginWithWallet={loginWithWallet} />;
+    return <AuthModal loginWithEmail={loginWithEmail} register={register} />;
   }
 
   return (

@@ -65,14 +65,15 @@ const SUBSCRIPTION_PLANS: SubscriptionTier[] = [
 interface SubscriptionPlansProps {
   currentTier?: SubscriptionTier['id'];
   onSelect: (tier: SubscriptionTier) => Promise<void>;
-  walletConnected?: boolean;
+  /** When true, user can subscribe (logged in via email or wallet). */
+  canSubscribe?: boolean;
 }
 
-export default function SubscriptionPlans({ currentTier, onSelect, walletConnected = false }: SubscriptionPlansProps) {
+export default function SubscriptionPlans({ currentTier, onSelect, canSubscribe = true }: SubscriptionPlansProps) {
   const [busy, setBusy] = useState<string | null>(null);
 
   async function pick(plan: SubscriptionTier) {
-    if (busy || !walletConnected) return;
+    if (busy || !canSubscribe) return;
     setBusy(plan.id);
     try {
       await onSelect(plan);
@@ -86,17 +87,17 @@ export default function SubscriptionPlans({ currentTier, onSelect, walletConnect
       <div className="text-center">
         <h2 className="text-3xl font-bold text-gray-900">Choose your plan</h2>
         <p className="mt-2 text-gray-600">
-          Subscribe with crypto. No email required.
+          Upgrade your subscription anytime.
         </p>
       </div>
 
-      {!walletConnected && (
+      {!canSubscribe && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
           <Wallet className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-medium text-amber-900">Connect wallet to subscribe</p>
+            <p className="text-sm font-medium text-amber-900">Sign in to subscribe</p>
             <p className="text-sm text-amber-700">
-              Use the "Connect wallet" button in the header to get started.
+              Log in with your email to choose a plan.
             </p>
           </div>
         </div>
@@ -148,7 +149,7 @@ export default function SubscriptionPlans({ currentTier, onSelect, walletConnect
                 </ul>
                 <button
                   onClick={() => pick(plan)}
-                  disabled={!walletConnected || active || !!busy}
+                  disabled={!canSubscribe || active || !!busy}
                   className={`w-full py-2.5 px-4 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
                     active ? 'bg-gray-100 text-gray-500 cursor-default' :
                     plan.recommended ? 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50' :
